@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Snip — URL Shortener</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --bg:        #0a0a0f;
+      --surface:   #13131a;
+      --border:    #1e1e2e;
+      --border2:   #2a2a3e;
+      --accent:    #5cffa8;
+      --accent2:   #3df09e;
+      --muted:     #4a4a6a;
+      --text:      #e8e8f0;
+      --text-dim:  #8888aa;
+      --error:     #ff6b6b;
+      --warn:      #ffd166;
+      --radius:    12px;
+      --font-head: 'Syne', sans-serif;
+      --font-mono: 'DM Mono', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-mono);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0 1rem;
+      overflow-x: hidden;
+    }
+
+    /* Animated grid background */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 48px 48px;
+      opacity: 0.4;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Glow blob */
+    body::after {
+      content: '';
+      position: fixed;
+      top: -20%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(92,255,168,0.08) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 680px;
+      padding: 80px 0 60px;
+    }
+
+    /* ── Header ────────────────────────────────────── */
+    header {
+      text-align: center;
+      margin-bottom: 56px;
+    }
+
+    .logo-mark {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .logo-icon {
+      width: 36px;
+      height: 36px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .logo-name {
+      font-family: var(--font-head);
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: var(--accent);
+      letter-spacing: -0.02em;
+    }
+
+    h1 {
+      font-family: var(--font-head);
+      font-size: clamp(2rem, 6vw, 3.2rem);
+      font-weight: 800;
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+      color: var(--text);
+      margin-bottom: 12px;
+    }
+
+    h1 span {
+      color: var(--accent);
+    }
+
+    .subtitle {
+      color: var(--text-dim);
+      font-size: 0.875rem;
+      letter-spacing: 0.03em;
+    }
+
+    /* ── Card ──────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius);
+      padding: 28px;
+      margin-bottom: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.3;
+    }
+
+    /* ── Form ──────────────────────────────────────── */
+    .field {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.7rem;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+    }
+
+    label .badge {
+      font-size: 0.55rem;
+      background: var(--border2);
+      color: var(--muted);
+      padding: 2px 6px;
+      border-radius: 4px;
+      letter-spacing: 0.06em;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+
+    input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    input::placeholder { color: var(--muted); }
+
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(92,255,168,0.08);
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    /* ── Advanced toggle ───────────────────────────── */
+    .advanced-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-dim);
+      font-size: 0.75rem;
+      cursor: pointer;
+      user-select: none;
+      margin-bottom: 16px;
+      width: fit-content;
+    }
+
+    .advanced-toggle:hover { color: var(--accent); }
+
+    .advanced-toggle svg {
+      transition: transform 0.25s;
+    }
+
+    .advanced-toggle.open svg { transform: rotate(90deg); }
+
+    .advanced-fields {
+      overflow: hidden;
+      max-height: 0;
+      opacity: 0;
+      transition: max-height 0.3s ease, opacity 0.3s ease;
+    }
+
+    .advanced-fields.visible {
+      max-height: 200px;
+      opacity: 1;
+    }
+
+    /* ── Submit Button ─────────────────────────────── */
+    .btn {
+      width: 100%;
+      padding: 13px;
+      background: var(--accent);
+      color: #0a0a0f;
+      border: none;
+      border-radius: 8px;
+      font-family: var(--font-head);
+      font-size: 0.9rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s, box-shadow 0.2s;
+      margin-top: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn:hover {
+      background: var(--accent2);
+      box-shadow: 0 0 24px rgba(92,255,168,0.25);
+    }
+
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(0,0,0,0.3);
+      border-top-color: #0a0a0f;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Result ────────────────────────────────────── */
+    .result {
+      display: none;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 20px;
+      animation: slideUp 0.3s ease;
+    }
+
+    .result.visible { display: block; }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .result-label {
+      font-size: 0.65rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+
+    .short-url-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .short-url-display {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 11px 14px;
+      font-family: var(--font-mono);
+      font-size: 1rem;
+      color: var(--accent);
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .copy-btn {
+      flex-shrink: 0;
+      background: var(--border2);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 10px 16px;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+
+    .copy-btn:hover {
+      background: var(--accent);
+      color: #0a0a0f;
+      border-color: var(--accent);
+    }
+
+    .copy-btn.copied {
+      background: var(--accent);
+      color: #0a0a0f;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .meta-item {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+
+    .meta-item-label {
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .meta-item-value {
+      font-size: 0.8rem;
+      color: var(--text);
+    }
+
+    /* ── Error / message ───────────────────────────── */
+    .msg {
+      display: none;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      margin-bottom: 16px;
+    }
+
+    .msg.visible { display: block; animation: slideUp 0.2s ease; }
+    .msg.error { background: rgba(255,107,107,0.1); border: 1px solid rgba(255,107,107,0.3); color: var(--error); }
+    .msg.info  { background: rgba(92,255,168,0.07); border: 1px solid rgba(92,255,168,0.2); color: var(--accent); }
+
+    /* ── Stats section ─────────────────────────────── */
+    .section-label {
+      font-size: 0.65rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .stats-input-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .stats-input-row input { flex: 1; }
+
+    .btn-sm {
+      flex-shrink: 0;
+      padding: 12px 18px;
+      background: var(--border2);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn-sm:hover { border-color: var(--accent); color: var(--accent); }
+
+    .stats-result {
+      display: none;
+      margin-top: 16px;
+    }
+
+    .stats-result.visible { display: block; animation: slideUp 0.25s ease; }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .stat-card {
+      background: var(--bg);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 14px;
+    }
+
+    .stat-number {
+      font-family: var(--font-head);
+      font-size: 1.8rem;
+      font-weight: 800;
+      color: var(--accent);
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+
+    .stat-desc {
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .original-url-display {
+      margin-top: 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      word-break: break-all;
+    }
+
+    /* ── Footer ────────────────────────────────────── */
+    footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.7rem;
+      letter-spacing: 0.08em;
+      padding-top: 16px;
+    }
+
+    footer span { color: var(--accent); }
+
+    /* ── Tabs ──────────────────────────────────────── */
+    .tabs {
+      display: flex;
+      gap: 2px;
+      background: var(--bg);
+      border: 1px solid var(--border2);
+      border-radius: 10px;
+      padding: 4px;
+      margin-bottom: 28px;
+    }
+
+    .tab {
+      flex: 1;
+      padding: 9px;
+      border-radius: 7px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      cursor: pointer;
+      letter-spacing: 0.05em;
+      transition: all 0.2s;
+    }
+
+    .tab.active {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border2);
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    @media (max-width: 480px) {
+      .row, .meta-grid, .stats-grid { grid-template-columns: 1fr; }
+      .stats-input-row { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo-mark">
+        <div class="logo-icon">✂</div>
+        <span class="logo-name">snip</span>
+      </div>
+      <h1>Shorter links,<br/><span>faster clicks.</span></h1>
+      <p class="subtitle">// redis-cached · rate-limited · collision-resistant</p>
+    </header>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('shorten')">→ shorten</button>
+      <button class="tab" onclick="switchTab('stats')">∑ analytics</button>
+    </div>
+
+    <!-- ── Shorten Tab ─────────────────────────────── -->
+    <div id="tab-shorten" class="tab-panel active">
+
+      <div id="msg-error" class="msg error"></div>
+      <div id="msg-info" class="msg info"></div>
+
+      <!-- Result -->
+      <div id="result" class="result">
+        <div class="result-label">// link ready</div>
+        <div class="short-url-row">
+          <div class="short-url-display" id="short-url-display">—</div>
+          <button class="copy-btn" id="copy-btn" onclick="copyUrl()">[ copy ]</button>
+        </div>
+        <div class="meta-grid">
+          <div class="meta-item">
+            <div class="meta-item-label">code</div>
+            <div class="meta-item-value" id="meta-code">—</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-item-label">clicks</div>
+            <div class="meta-item-value" id="meta-clicks">0</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-item-label">expires</div>
+            <div class="meta-item-value" id="meta-expires">never</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Form -->
+      <div class="card">
+        <div class="field">
+          <label>destination url</label>
+          <input type="url" id="url-input" placeholder="https://your-very-long-url.com/goes/here" />
+        </div>
+
+        <div class="advanced-toggle" id="adv-toggle" onclick="toggleAdvanced()">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M4 2L8 6L4 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          advanced options
+        </div>
+
+        <div class="advanced-fields" id="adv-fields">
+          <div class="row">
+            <div class="field">
+              <label>custom alias <span class="badge">optional</span></label>
+              <input type="text" id="alias-input" placeholder="my-cool-link" />
+            </div>
+            <div class="field">
+              <label>expires in (hours) <span class="badge">optional</span></label>
+              <input type="number" id="expires-input" placeholder="24" min="1" max="8760" />
+            </div>
+          </div>
+        </div>
+
+        <button class="btn" id="shorten-btn" onclick="shortenUrl()">
+          <span id="btn-text">✂ shorten url</span>
+          <div id="btn-spinner" class="spinner" style="display:none"></div>
+        </button>
+      </div>
+
+    </div>
+
+    <!-- ── Stats Tab ───────────────────────────────── -->
+    <div id="tab-stats" class="tab-panel">
+      <div class="card">
+        <div class="section-label">// lookup short code</div>
+        <div class="stats-input-row">
+          <input type="text" id="stats-input" placeholder="abc1234" />
+          <button class="btn-sm" onclick="fetchStats()">lookup →</button>
+        </div>
+
+        <div id="stats-error" class="msg error" style="margin-top:12px"></div>
+
+        <div id="stats-result" class="stats-result">
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-number" id="s-clicks">—</div>
+              <div class="stat-desc">total clicks</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number" id="s-status">—</div>
+              <div class="stat-desc">status</div>
+            </div>
+          </div>
+          <div class="original-url-display" id="s-original">—</div>
+          <div style="margin-top:10px; display:flex; gap:8px; font-size:0.7rem; color:var(--muted)">
+            <span>created: <span id="s-created" style="color:var(--text-dim)">—</span></span>
+            <span>·</span>
+            <span>expires: <span id="s-expires" style="color:var(--text-dim)">—</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      built with <span>Node.js · Express · PostgreSQL · Redis · Docker</span>
+    </footer>
+  </div>
+
+  <script>
+    // ── Config ─────────────────────────────────────────
+    // Change this to your deployed backend URL
+    const API_BASE = window.location.origin;
+
+    // ── Tab switching ──────────────────────────────────
+    function switchTab(name) {
+      document.querySelectorAll('.tab').forEach((t, i) => {
+        t.classList.toggle('active', ['shorten','stats'][i] === name);
+      });
+      document.querySelectorAll('.tab-panel').forEach(p => {
+        p.classList.toggle('active', p.id === `tab-${name}`);
+      });
+    }
+
+    // ── Advanced options ───────────────────────────────
+    function toggleAdvanced() {
+      const toggle = document.getElementById('adv-toggle');
+      const fields = document.getElementById('adv-fields');
+      toggle.classList.toggle('open');
+      fields.classList.toggle('visible');
+    }
+
+    // ── Shorten URL ────────────────────────────────────
+    async function shortenUrl() {
+      const url     = document.getElementById('url-input').value.trim();
+      const alias   = document.getElementById('alias-input').value.trim();
+      const expires = document.getElementById('expires-input').value.trim();
+
+      clearMessages();
+
+      if (!url) return showError('Please enter a URL to shorten.');
+
+      setLoading(true);
+
+      try {
+        const body = { url };
+        if (alias)   body.alias     = alias;
+        if (expires) body.expiresIn = parseInt(expires);
+
+        const res  = await fetch(`${API_BASE}/shorten`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          showError(data.error || 'Something went wrong.');
+          return;
+        }
+
+        showResult(data);
+      } catch (err) {
+        showError('Network error — is the backend running?');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function showResult(data) {
+      document.getElementById('short-url-display').textContent = data.shortUrl;
+      document.getElementById('meta-code').textContent    = data.shortCode;
+      document.getElementById('meta-clicks').textContent  = data.clickCount ?? 0;
+      document.getElementById('meta-expires').textContent = data.expiresAt
+        ? new Date(data.expiresAt).toLocaleDateString()
+        : 'never';
+
+      document.getElementById('result').classList.add('visible');
+      document.getElementById('copy-btn').textContent = '[ copy ]';
+      document.getElementById('copy-btn').classList.remove('copied');
+    }
+
+    function copyUrl() {
+      const url = document.getElementById('short-url-display').textContent;
+      navigator.clipboard.writeText(url).then(() => {
+        const btn = document.getElementById('copy-btn');
+        btn.textContent = '[ copied! ]';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = '[ copy ]';
+          btn.classList.remove('copied');
+        }, 2000);
+      });
+    }
+
+    // ── Stats lookup ───────────────────────────────────
+    async function fetchStats() {
+      const code = document.getElementById('stats-input').value.trim();
+      const errEl = document.getElementById('stats-error');
+      errEl.classList.remove('visible');
+      document.getElementById('stats-result').classList.remove('visible');
+
+      if (!code) { errEl.textContent = 'Enter a short code.'; errEl.classList.add('visible'); return; }
+
+      try {
+        const res  = await fetch(`${API_BASE}/api/stats/${code}`);
+        const data = await res.json();
+
+        if (!res.ok) {
+          errEl.textContent = data.error || 'Not found.';
+          errEl.classList.add('visible');
+          return;
+        }
+
+        document.getElementById('s-clicks').textContent   = data.clickCount.toLocaleString();
+        document.getElementById('s-status').textContent   = data.isExpired ? '⚠ expired' : '● live';
+        document.getElementById('s-original').textContent = data.originalUrl;
+        document.getElementById('s-created').textContent  = new Date(data.createdAt).toLocaleDateString();
+        document.getElementById('s-expires').textContent  = data.expiresAt
+          ? new Date(data.expiresAt).toLocaleDateString()
+          : 'never';
+
+        document.getElementById('stats-result').classList.add('visible');
+      } catch (err) {
+        errEl.textContent = 'Network error.';
+        errEl.classList.add('visible');
+      }
+    }
+
+    // ── Helpers ────────────────────────────────────────
+    function setLoading(on) {
+      document.getElementById('shorten-btn').disabled   = on;
+      document.getElementById('btn-text').style.display = on ? 'none' : 'inline';
+      document.getElementById('btn-spinner').style.display = on ? 'block' : 'none';
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('msg-error');
+      el.textContent = `⚠ ${msg}`;
+      el.classList.add('visible');
+    }
+
+    function clearMessages() {
+      document.getElementById('msg-error').classList.remove('visible');
+      document.getElementById('msg-info').classList.remove('visible');
+    }
+
+    // Allow Enter key
+    document.getElementById('url-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') shortenUrl();
+    });
+    document.getElementById('stats-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') fetchStats();
+    });
+  </script>
+</body>
+</html>
