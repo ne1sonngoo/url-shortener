@@ -1,19 +1,16 @@
-# ── Stage 1: Dependencies ─────────────────────────────
 FROM node:20-alpine AS deps
 WORKDIR /app
-COPY package.json ./
+COPY backend/package.json ./
 RUN npm install --omit=dev
 
-# ── Stage 2: Runtime ──────────────────────────────────
 FROM node:20-alpine AS runtime
 WORKDIR /app
 
-# Create non-root user for security
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
-# Copy deps and source
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY backend/ .
+COPY frontend/ ./frontend
 
 RUN chown -R appuser:appgroup /app
 USER appuser

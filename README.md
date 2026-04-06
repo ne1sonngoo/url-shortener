@@ -1,110 +1,67 @@
-# ✂ Snip — Production URL Shortener
+# Snip — URL Shortener
 
-A full-stack, production-grade URL shortener built with **Node.js + Express**, **PostgreSQL**, **Redis**, **Nginx**, and **Docker**.
-
-```
-                ┌──────────────┐
-   Client ────▶ │  Nginx :80   │  ← rate limiting (outer layer)
-                └──────┬───────┘
-                       │ reverse proxy
-                ┌──────▼───────┐
-                │  Express :3000│  ← rate limiting (Redis, inner)
-                └──────┬───────┘
-                       │
-              ┌─────────┴──────────┐
-              │                    │
-       ┌──────▼──────┐    ┌───────▼───────┐
-       │  PostgreSQL  │    │  Redis Cache  │
-       │  (persist)  │    │  (fast reads) │
-       └─────────────┘    └───────────────┘
-```
+A URL shortener built with Node.js, PostgreSQL, Redis, Nginx, and Docker. Shortens links, tracks clicks, supports custom aliases and expiration dates. Redis handles caching and rate limiting so the database isn't hammered on every redirect.
 
 ---
 
-## Features
+## Stack
 
-| Feature | Details |
-|---|---|
-| `POST /shorten` | Create short URL, with optional alias + expiry |
-| `GET /:code` | Redirect — Redis cache hit → no DB query |
-| `GET /api/stats/:code` | Click analytics, status, metadata |
-| `DELETE /api/url/:code` | Delete a short URL + evict cache |
-| `GET /api/health` | Health check (Postgres + Redis status) |
-| **Redis Caching** | `short_code → original_url` cached for 1h (configurable) |
-| **Rate Limiting** | Redis sliding window — 20 req/min on `/shorten` |
-| **ID Generation** | NanoID + Base62, 62^7 = ~3.5T combinations, collision-retry |
-| **Custom Aliases** | `/my-cool-link` with validation |
-| **Expiration** | TTL in hours, auto-404 on expiry |
-| **Click Tracking** | Async increment — non-blocking |
-| **Nginx** | Two-tier rate limiting, keepalive, gzip, security headers |
-| **Docker** | Multi-stage build, non-root user, healthchecks |
-| **Logging** | Winston — JSON in prod, colorized in dev |
+- **Node.js + Express** — API server
+- **PostgreSQL** — stores all URLs persistently
+- **Redis** — caches redirects, enforces rate limits
+- **Nginx** — reverse proxy, sits in front of Express
+- **Docker** — runs everything together
 
 ---
 
-## Quick Start (Docker)
+## Getting Started
+
+The only thing you need installed is Docker Desktop.
 
 ```bash
-# 1. Clone + enter project
-git clone <your-repo-url>
+git clone <your-repo>
 cd url-shortener
 
-# 2. Configure env (edit as needed)
 cp backend/.env.example backend/.env
-
-# 3. Start everything
-docker compose up -d
-
-# 4. Access the app
-open http://localhost
 ```
 
-That's it. Nginx → Express → PostgreSQL + Redis all wired up.
+Open `backend/.env` and make sure these are set:
+
+```env
+POSTGRES_HOST=postgres
+REDIS_HOST=redis
+BASE_URL=http://localhost
+```
+
+Then start everything:
+
+```bash
+docker compose up -d --build
+```
+
+Open `http://localhost` in your browser. That's it — Postgres, Redis, Nginx, and the backend all start automatically. The database tables get created on first boot.
 
 ---
 
-## Local Development (no Docker)
-
-### Prerequisites
-- Node.js 18+
-- PostgreSQL 14+
-- Redis 7+
-
-```bash
-cd backend
-npm install
-cp .env.example .env
-# Edit .env to point to your local PG + Redis
-
-npm start
-# → http://localhost:3000
-```
-
-Serve the frontend from the `frontend/` folder with any static server:
-```bash
-npx serve frontend/
-```
-
----
-
-## API Reference
+## API
 
 ### `POST /shorten`
-**Rate limited:** 20 requests / 60 seconds per IP
+
+Creates a short URL.
 
 ```json
-// Request body
+// request
 {
-  "url": "https://www.example.com/very-long-url",
-  "alias": "my-link",     // optional — 3-50 alphanumeric + hyphens
-  "expiresIn": 24         // optional — hours (1–8760)
+  "url": "https://your-long-url.com/goes/here",
+  "alias": "my-link",     // optional
+  "expiresIn": 24         // optional, hours
 }
 
-// Response 201
+// response
 {
   "shortCode": "aB3xK7m",
   "shortUrl": "http://localhost/aB3xK7m",
-  "originalUrl": "https://www.example.com/very-long-url",
+  "originalUrl": "https://your-long-url.com/goes/here",
   "clickCount": 0,
   "expiresAt": null,
   "createdAt": "2024-01-15T10:30:00Z"
@@ -112,150 +69,106 @@ npx serve frontend/
 ```
 
 ### `GET /:code`
-Redirects (302) to original URL. Returns `404` if not found, `410` if expired.
+
+Redirects to the original URL. Hits Redis first — if the code is cached, Postgres never gets touched. Click count increments in the background so the redirect isn't slowed down.
 
 ### `GET /api/stats/:code`
-```json
-{
-  "shortCode": "aB3xK7m",
-  "shortUrl": "http://localhost/aB3xK7m",
-  "originalUrl": "https://www.example.com/very-long-url",
-  "clickCount": 42,
-  "isCustomAlias": false,
-  "isExpired": false,
-  "expiresAt": null,
-  "createdAt": "2024-01-15T10:30:00Z"
-}
-```
+
+Returns click count, status, and metadata for a short URL.
 
 ### `DELETE /api/url/:code`
-Deletes the URL and evicts from Redis cache.
+
+Deletes the short URL and removes it from the Redis cache.
 
 ### `GET /api/health`
+
+Health check — returns status of Postgres and Redis.
+
 ```json
-{ "status": "healthy", "postgres": "up", "redis": "up", "timestamp": "..." }
+{ "status": "healthy", "postgres": "up", "redis": "up" }
 ```
 
 ---
 
-## Architecture Decisions
+## How it works
 
-### ID Generation — NanoID + Base62
-- Alphabet: `[0-9A-Za-z]` — URL-safe, no ambiguous chars
-- Length: 7 → **62^7 = ~3.5 trillion** combinations
-- Collision-retry logic: up to 5 attempts, then fallback to length+2
-- **Talking point:** *"Designed collision-resistant ID generation; with 3.5T codes, even at 1M URLs/day, collision probability stays under 0.001%"*
+**Redirects** — when someone visits a short URL, Express checks Redis first. If it's there, it redirects immediately without touching Postgres. If not, it queries Postgres, caches the result, then redirects. At steady state, almost every redirect is served from Redis.
 
-### Redis Caching (Cache-Aside Pattern)
 ```
-GET /:code
-  → Redis HIT  → redirect immediately (sub-ms)
-  → Redis MISS → query PostgreSQL → cache result → redirect
-```
-- TTL matches URL expiration (or 1h default)
-- Write-through on create: pre-warm cache
-- Cache eviction on delete
-- **Talking point:** *"Reduced read latency and DB load using Redis cache-aside; ~95% of redirect traffic never touches PostgreSQL"*
-
-### Rate Limiting (Redis Fixed Window)
-- `INCR key` + `EXPIRE key windowSecs` in a Redis MULTI block
-- Nginx provides outer rate limit (10 req/s global, 2 req/s on `/shorten`)
-- Node.js provides inner rate limit (20 req/min per IP via Redis)
-- **Fail-open:** if Redis is down, requests are allowed (availability > security)
-- **Talking point:** *"Two-tier rate limiting at Nginx and application layer; Redis atomic INCR ensures accurate counting without race conditions"*
-
-### PostgreSQL Indexes
-```sql
-CREATE INDEX idx_urls_short_code ON urls(short_code);       -- O(log n) lookup
-CREATE INDEX idx_urls_expires_at ON urls(expires_at)        -- efficient expiry queries
-  WHERE expires_at IS NOT NULL;
+GET /aB3xK7m
+    │
+    ├── Redis HIT  → redirect (sub-ms, no DB query)
+    │
+    └── Redis MISS → query Postgres → cache it → redirect
 ```
 
----
+**Rate limiting** — two layers. Nginx limits requests per second at the network level. Express has a Redis-backed limiter on top of that — 20 requests per minute per IP on `/shorten`. Uses Redis `INCR` + `EXPIRE` in a single atomic block so there are no race conditions. If Redis goes down, the limiter fails open (requests go through rather than everything breaking).
 
-## Deployment
+**ID generation** — uses NanoID with a base62 alphabet `[0-9A-Za-z]`. 7 characters gives 62^7 ≈ 3.5 trillion possible codes. On the rare chance of a collision it retries up to 5 times, then falls back to a 9-character code.
 
-### Railway (Recommended — Simplest)
-1. Push to GitHub
-2. New project → "Deploy from GitHub repo"
-3. Add services: **PostgreSQL** + **Redis** (Railway provides both)
-4. Set env vars: `POSTGRES_HOST`, `REDIS_HOST`, etc. (Railway injects DATABASE_URL)
-5. Set `BASE_URL` to your Railway-generated domain
-6. Deploy ✓
-
-### Render
-1. New Web Service → connect repo → `backend/` root
-2. Build command: `npm install`
-3. Start command: `node src/index.js`
-4. Add **Render PostgreSQL** + **Render Redis** add-ons
-5. Set environment variables from `.env.example`
-
-### AWS (EC2 + ECS)
-```bash
-# Build and push to ECR
-aws ecr create-repository --repository-name url-shortener
-docker build -t url-shortener ./backend
-docker tag url-shortener:latest <ecr-uri>/url-shortener:latest
-docker push <ecr-uri>/url-shortener:latest
-
-# Use docker-compose.yml with ECS Compose integration
-# or deploy to EC2 and run docker compose up -d
-```
-
-### Self-hosted (any Linux VPS)
-```bash
-git clone <repo>
-cd url-shortener
-cp backend/.env.example backend/.env
-# Edit .env with production values + your domain
-
-docker compose up -d
-# Done — Nginx listens on :80
-```
-
-For HTTPS, uncomment the `443` port in `docker-compose.yml` and mount SSL certs.
+**Expiration** — if a URL has an expiry, the Redis TTL is set to match it exactly so stale entries self-evict. Expired URLs return a 410 Gone.
 
 ---
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | `3000` | Express server port |
-| `BASE_URL` | auto-detected | Used in shortened URL responses |
-| `POSTGRES_HOST` | `postgres` | PostgreSQL hostname |
-| `POSTGRES_DB` | `urlshortener` | Database name |
-| `POSTGRES_USER` | `postgres` | DB user |
-| `POSTGRES_PASSWORD` | — | **Set this!** |
-| `REDIS_HOST` | `redis` | Redis hostname |
-| `CACHE_TTL` | `3600` | Cache TTL in seconds |
-| `SHORT_CODE_LENGTH` | `7` | Generated code length |
-| `LOG_LEVEL` | `info` | Winston log level |
+| Variable            | Default        | Notes                                      |
+| ------------------- | -------------- | ------------------------------------------ |
+| `BASE_URL`          | auto           | Set to your domain in production           |
+| `POSTGRES_HOST`     | `postgres`     | Use `localhost` if running outside Docker  |
+| `POSTGRES_DB`       | `urlshortener` |                                            |
+| `POSTGRES_USER`     | `postgres`     |                                            |
+| `POSTGRES_PASSWORD` | —              | Change this                                |
+| `REDIS_HOST`        | `redis`        | Use `localhost` if running outside Docker  |
+| `CACHE_TTL`         | `3600`         | Seconds, default 1 hour                    |
+| `SHORT_CODE_LENGTH` | `7`            | Longer = more codes, less collision chance |
+| `LOG_LEVEL`         | `info`         |                                            |
 
 ---
 
-## Future Enhancements
+## Common Issues
 
-- [ ] **BullMQ** — background job queue for async click analytics
-- [ ] **QR Code** generation per short URL
-- [ ] **Auth** — user accounts, private URLs, dashboard
-- [ ] **Geo analytics** — track clicks by country
-- [ ] **Prometheus metrics** — `/metrics` endpoint for Grafana
-- [ ] **Horizontal scaling** — Redis cluster, PG read replicas
-- [ ] **HTTPS** — Let's Encrypt via Certbot + Nginx
+**`POSTGRES_HOST` / `REDIS_HOST`** — if you're running the backend with `npm start` locally (outside Docker), set these to `localhost`. If running inside Docker (via `docker compose up`), keep them as `postgres` and `redis` — those are the Docker service names and resolve automatically inside the container network.
+
+**`BASE_URL`** — affects what URL gets returned when you shorten something. If it's wrong you'll get `localhost:3000/...` instead of `localhost/...` and the link won't work. Always set this to whatever domain you're actually serving from.
+
+**Docker Desktop not running** — the `pipe/dockerDesktopLinuxEngine` error just means Docker Desktop isn't open. Start it and wait for the whale icon in the system tray before running any `docker` commands.
 
 ---
 
-## Stack
+## Deployment
 
-| Layer | Technology |
-|---|---|
-| Runtime | Node.js 20 |
-| Framework | Express 4 |
-| Database | PostgreSQL 16 |
-| Cache + Rate Limit | Redis 7 |
-| Reverse Proxy | Nginx 1.25 |
-| Containerization | Docker + Compose |
-| ID Generation | NanoID (Base62) |
-| Logging | Winston |
-| Validation | valid-url |
+**Railway** — easiest option. Push to GitHub, create a new project, add Postgres and Redis from the Railway dashboard, set your env vars, and deploy. Railway injects `DATABASE_URL` automatically.
+
+**Render** — similar to Railway. Create a web service pointing to the repo, add Postgres and Redis add-ons, set env vars.
+
+**Any VPS** — clone the repo, install Docker, run `docker compose up -d --build`. Point your domain at the server and update `BASE_URL`. For HTTPS, uncomment the 443 port in `docker-compose.yml` and add SSL certs.
+
+---
+
+## Project Structure
+
+```
+url-shortener/
+├── docker-compose.yml
+├── nginx/
+│   └── nginx.conf
+├── frontend/
+│   └── index.html
+└── backend/
+    ├── Dockerfile
+    ├── .env.example
+    └── src/
+        ├── index.js
+        ├── config/
+        │   ├── db.js          postgres pool + retry logic
+        │   ├── redis.js       cache helpers + rate limit counters
+        │   └── migrate.js     standalone migration script
+        ├── middleware/
+        │   └── rateLimiter.js redis-backed rate limiting
+        ├── routes/
+        │   └── urls.js        all endpoints
+        └── utils/
+            ├── idGen.js       nanoid + collision retry
+            └── logger.js      winston
+```

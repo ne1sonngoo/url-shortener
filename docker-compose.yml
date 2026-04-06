@@ -44,8 +44,8 @@ services:
   # ── Node.js Backend ────────────────────────────────────────────────────────
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: urlshortener_backend
     restart: unless-stopped
     env_file:
