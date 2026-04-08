@@ -19,7 +19,7 @@ A URL shortener built with Node.js, PostgreSQL, Redis, Nginx, and Docker. Shorte
 The only thing you need installed is Docker Desktop.
 
 ```bash
-git clone <your-repo>
+git clone https://github.com/ne1sonngoo/url-shortener.git
 cd url-shortener
 
 cp backend/.env.example backend/.env

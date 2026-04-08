@@ -559,6 +559,9 @@
             <div class="meta-item-value" id="meta-expires">never</div>
           </div>
         </div>
+        <div style="text-align:right; margin-top:12px;">
+          <span onclick="goToStats()" style="font-size:0.7rem; color:var(--muted); cursor:pointer; letter-spacing:0.05em; transition:color 0.15s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--muted)'">∑ view stats →</span>
+        </div>
       </div>
 
       <!-- Form -->
@@ -636,7 +639,7 @@
   <script>
     // ── Config ─────────────────────────────────────────
     // Change this to your deployed backend URL
-    const API_BASE = 'http://localhost';
+    const API_BASE = window.location.origin;
 
     // ── Tab switching ──────────────────────────────────
     function switchTab(name) {
@@ -705,6 +708,14 @@
       document.getElementById('result').classList.add('visible');
       document.getElementById('copy-btn').textContent = '[ copy ]';
       document.getElementById('copy-btn').classList.remove('copied');
+
+      // Pre-fill the stats tab so it is ready when the user clicks over
+      document.getElementById('stats-input').value = data.shortCode;
+    }
+
+    function goToStats() {
+      switchTab('stats');
+      fetchStats();
     }
 
     function copyUrl() {
